@@ -13,7 +13,7 @@
     "@supabase/supabase-js": "^2.46.2",
     "@tanstack/react-table": "^8.20.5",
     "lucide-react": "^0.468.0",
-    "next": "^15.2.4",
+    "next": "^16.2.10",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-hook-form": "^7.54.1"
