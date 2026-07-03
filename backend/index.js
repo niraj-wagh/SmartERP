@@ -58,4 +58,27 @@ app.listen(PORT, () => {
   console.log(`   Health check → GET http://localhost:${PORT}/api/health\n`);
 });
 
+const ALLOWED_ORIGINS = [
+  process.env.CORS_ORIGIN,                    // your main vercel URL
+  "http://localhost:3000",                     // local dev
+].filter(Boolean);
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (Postman, curl, server-to-server)
+    if (!origin) return callback(null, true);
+
+    // Allow any vercel.app preview URL for this project
+    const isVercelPreview = /^https:\/\/smart-erp.*\.vercel\.app$/.test(origin);
+
+    if (ALLOWED_ORIGINS.includes(origin) || isVercelPreview) {
+      callback(null, true);
+    } else {
+      console.warn("[CORS] Blocked origin:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
+
 module.exports = app;
