@@ -1,15 +1,14 @@
-// Central API client — calls the Express backend
-// Every request includes the Supabase JWT for authentication.
 import { supabase } from "./supabaseClient";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(/\/$/, "");
 
 async function getToken() {
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token || null;
 }
 
-async function apiFetch(path, options = {}) {
+// Retry on 502/503/504 (Render waking up) — max 3 attempts with backoff
+async function apiFetch(path, options = {}, attempt = 1) {
   const token = await getToken();
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -19,109 +18,99 @@ async function apiFetch(path, options = {}) {
       ...options.headers,
     },
   });
+
+  // Render is waking up — retry after 3s, then 6s
+  if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt <= 3) {
+    await new Promise((r) => setTimeout(r, attempt * 3000));
+    return apiFetch(path, options, attempt + 1);
+  }
+
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try { const e = await res.json(); msg = e.message || msg; } catch {}
     throw new Error(msg);
   }
-  // For binary responses (PDF, xlsx) return the response object
+
+  // Binary responses (PDF / xlsx) — return raw Response for blob handling
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/pdf") || ct.includes("spreadsheetml")) return res;
   return res.json();
 }
 
-// ── Companies ──────────────────────────────────────────────
+// ── Companies ─────────────────────────────────────────────────────────
 export const api = {
   companies: {
-    list: () => apiFetch("/api/companies"),
-    create: (body) => apiFetch("/api/companies", { method: "POST", body: JSON.stringify(body) }),
-    update: (id, body) => apiFetch(`/api/companies/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-    delete: (id) => apiFetch(`/api/companies/${id}`, { method: "DELETE" }),
-    dashboard: (cid) => apiFetch(`/api/companies/${cid}/dashboard`),
-    auditLogs: (cid) => apiFetch(`/api/companies/${cid}/audit-logs`),
+    list:       ()          => apiFetch("/api/companies"),
+    create:     (body)      => apiFetch("/api/companies", { method:"POST", body:JSON.stringify(body) }),
+    update:     (id, body)  => apiFetch(`/api/companies/${id}`, { method:"PUT", body:JSON.stringify(body) }),
+    delete:     (id)        => apiFetch(`/api/companies/${id}`, { method:"DELETE" }),
+    dashboard:  (cid)       => apiFetch(`/api/companies/${cid}/dashboard`),
+    auditLogs:  (cid)       => apiFetch(`/api/companies/${cid}/audit-logs`),
     members: {
-      list: (cid) => apiFetch(`/api/companies/${cid}/members`),
-      add: (cid, body) => apiFetch(`/api/companies/${cid}/members`, { method: "POST", body: JSON.stringify(body) }),
-      updateRole: (cid, mid, role) => apiFetch(`/api/companies/${cid}/members/${mid}`, { method: "PUT", body: JSON.stringify({ role }) }),
-      remove: (cid, mid) => apiFetch(`/api/companies/${cid}/members/${mid}`, { method: "DELETE" }),
+      list:       (cid)           => apiFetch(`/api/companies/${cid}/members`),
+      add:        (cid, body)     => apiFetch(`/api/companies/${cid}/members`, { method:"POST", body:JSON.stringify(body) }),
+      updateRole: (cid, mid, role)=> apiFetch(`/api/companies/${cid}/members/${mid}`, { method:"PUT", body:JSON.stringify({ role }) }),
+      remove:     (cid, mid)      => apiFetch(`/api/companies/${cid}/members/${mid}`, { method:"DELETE" }),
     },
   },
 
-  // ── Masters ───────────────────────────────────────────────
+  // ── Masters ────────────────────────────────────────────────────────
   customers: {
-    list: (cid) => apiFetch(`/api/companies/${cid}/customers`),
-    create: (cid, body) => apiFetch(`/api/companies/${cid}/customers`, { method: "POST", body: JSON.stringify(body) }),
-    update: (cid, id, body) => apiFetch(`/api/companies/${cid}/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-    delete: (cid, id) => apiFetch(`/api/companies/${cid}/customers/${id}`, { method: "DELETE" }),
+    list:   (cid)         => apiFetch(`/api/companies/${cid}/customers`),
+    create: (cid, body)   => apiFetch(`/api/companies/${cid}/customers`, { method:"POST", body:JSON.stringify(body) }),
+    update: (cid, id, b)  => apiFetch(`/api/companies/${cid}/customers/${id}`, { method:"PUT", body:JSON.stringify(b) }),
+    delete: (cid, id)     => apiFetch(`/api/companies/${cid}/customers/${id}`, { method:"DELETE" }),
   },
 
   suppliers: {
-    list: (cid) => apiFetch(`/api/companies/${cid}/suppliers`),
-    create: (cid, body) => apiFetch(`/api/companies/${cid}/suppliers`, { method: "POST", body: JSON.stringify(body) }),
-    update: (cid, id, body) => apiFetch(`/api/companies/${cid}/suppliers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-    delete: (cid, id) => apiFetch(`/api/companies/${cid}/suppliers/${id}`, { method: "DELETE" }),
+    list:   (cid)         => apiFetch(`/api/companies/${cid}/suppliers`),
+    create: (cid, body)   => apiFetch(`/api/companies/${cid}/suppliers`, { method:"POST", body:JSON.stringify(body) }),
+    update: (cid, id, b)  => apiFetch(`/api/companies/${cid}/suppliers/${id}`, { method:"PUT", body:JSON.stringify(b) }),
+    delete: (cid, id)     => apiFetch(`/api/companies/${cid}/suppliers/${id}`, { method:"DELETE" }),
   },
 
   stockItems: {
-    list: (cid) => apiFetch(`/api/companies/${cid}/stock-items`),
-    create: (cid, body) => apiFetch(`/api/companies/${cid}/stock-items`, { method: "POST", body: JSON.stringify(body) }),
-    update: (cid, id, body) => apiFetch(`/api/companies/${cid}/stock-items/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-    delete: (cid, id) => apiFetch(`/api/companies/${cid}/stock-items/${id}`, { method: "DELETE" }),
+    list:   (cid)         => apiFetch(`/api/companies/${cid}/stock-items`),
+    create: (cid, body)   => apiFetch(`/api/companies/${cid}/stock-items`, { method:"POST", body:JSON.stringify(body) }),
+    update: (cid, id, b)  => apiFetch(`/api/companies/${cid}/stock-items/${id}`, { method:"PUT", body:JSON.stringify(b) }),
+    delete: (cid, id)     => apiFetch(`/api/companies/${cid}/stock-items/${id}`, { method:"DELETE" }),
   },
 
-  // ── Vouchers ──────────────────────────────────────────────
+  // ── Vouchers ───────────────────────────────────────────────────────
   sales: {
-    list: (cid, params = {}) => {
-      const q = new URLSearchParams(params).toString();
-      return apiFetch(`/api/companies/${cid}/sales${q ? "?" + q : ""}`);
-    },
-    get: (cid, id) => apiFetch(`/api/companies/${cid}/sales/${id}`),
-    create: (cid, body) => apiFetch(`/api/companies/${cid}/sales`, { method: "POST", body: JSON.stringify(body) }),
-    updateStatus: (cid, id, status) => apiFetch(`/api/companies/${cid}/sales/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    list:         (cid, params={}) => { const q=new URLSearchParams(params).toString(); return apiFetch(`/api/companies/${cid}/sales${q?"?"+q:""}`); },
+    get:          (cid, id)        => apiFetch(`/api/companies/${cid}/sales/${id}`),
+    create:       (cid, body)      => apiFetch(`/api/companies/${cid}/sales`, { method:"POST", body:JSON.stringify(body) }),
+    updateStatus: (cid, id, status)=> apiFetch(`/api/companies/${cid}/sales/${id}/status`, { method:"PATCH", body:JSON.stringify({ status }) }),
   },
 
   purchases: {
-    list: (cid, params = {}) => {
-      const q = new URLSearchParams(params).toString();
-      return apiFetch(`/api/companies/${cid}/purchases${q ? "?" + q : ""}`);
-    },
-    get: (cid, id) => apiFetch(`/api/companies/${cid}/purchases/${id}`),
-    create: (cid, body) => apiFetch(`/api/companies/${cid}/purchases`, { method: "POST", body: JSON.stringify(body) }),
-    updateStatus: (cid, id, status) => apiFetch(`/api/companies/${cid}/purchases/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    list:         (cid, params={}) => { const q=new URLSearchParams(params).toString(); return apiFetch(`/api/companies/${cid}/purchases${q?"?"+q:""}`); },
+    get:          (cid, id)        => apiFetch(`/api/companies/${cid}/purchases/${id}`),
+    create:       (cid, body)      => apiFetch(`/api/companies/${cid}/purchases`, { method:"POST", body:JSON.stringify(body) }),
+    updateStatus: (cid, id, status)=> apiFetch(`/api/companies/${cid}/purchases/${id}/status`, { method:"PATCH", body:JSON.stringify({ status }) }),
   },
 
-  // ── Reports ───────────────────────────────────────────────
+  // ── Reports ────────────────────────────────────────────────────────
   reports: {
-    stockSummary: (cid) => apiFetch(`/api/companies/${cid}/reports/stock-summary`),
-    salesRegister: (cid, params = {}) => {
-      const q = new URLSearchParams(params).toString();
-      return apiFetch(`/api/companies/${cid}/reports/sales-register${q ? "?" + q : ""}`);
-    },
-    customerStatement: (cid, customerId) => apiFetch(`/api/companies/${cid}/reports/customer-statement/${customerId}`),
-    gstSummary: (cid, params = {}) => {
-      const q = new URLSearchParams(params).toString();
-      return apiFetch(`/api/companies/${cid}/reports/gst-summary${q ? "?" + q : ""}`);
-    },
-    inventory: (cid) => apiFetch(`/api/companies/${cid}/reports/inventory`),
+    stockSummary:      (cid)            => apiFetch(`/api/companies/${cid}/reports/stock-summary`),
+    salesRegister:     (cid, params={}) => { const q=new URLSearchParams(params).toString(); return apiFetch(`/api/companies/${cid}/reports/sales-register${q?"?"+q:""}`); },
+    customerStatement: (cid, custId)    => apiFetch(`/api/companies/${cid}/reports/customer-statement/${custId}`),
+    gstSummary:        (cid, params={}) => { const q=new URLSearchParams(params).toString(); return apiFetch(`/api/companies/${cid}/reports/gst-summary${q?"?"+q:""}`); },
+    inventory:         (cid)            => apiFetch(`/api/companies/${cid}/reports/inventory`),
   },
 
-  // ── PDF & Excel (return Response for blob download) ───────
-  pdf: {
-    voucher: (body) => apiFetch("/api/pdf/voucher", { method: "POST", body: JSON.stringify(body) }),
-  },
-  excel: {
-    export: (body) => apiFetch("/api/excel/export", { method: "POST", body: JSON.stringify(body) }),
-  },
+  // ── PDF & Excel ────────────────────────────────────────────────────
+  pdf:   { voucher: (body) => apiFetch("/api/pdf/voucher",    { method:"POST", body:JSON.stringify(body) }) },
+  excel: { export:  (body) => apiFetch("/api/excel/export",   { method:"POST", body:JSON.stringify(body) }) },
 };
 
-// Helper: download a binary response as a file
+// Download a binary Response as a file
 export async function downloadResponse(responseOrPromise, filename) {
   const res = await responseOrPromise;
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }

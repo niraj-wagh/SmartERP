@@ -11,6 +11,7 @@ import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import FunctionKeyBar from "./FunctionKeyBar";
 import CommandPalette from "./CommandPalette";
+import { startKeepAlive, stopKeepAlive } from "@/lib/keepAlive";
 
 function ShellInner({ children }) {
   const router = useRouter();
@@ -18,6 +19,12 @@ function ShellInner({ children }) {
   const { pageShortcuts } = useShortcutBar();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Keep Render backend awake
+  useEffect(() => {
+    startKeepAlive();
+    return () => stopKeepAlive();
+  }, []);
 
   const handleKeyDown = useCallback((e) => {
     const tag = e.target?.tagName;
@@ -42,7 +49,9 @@ function ShellInner({ children }) {
   return (
     <div className="h-screen flex bg-ink overflow-hidden">
       <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
-      {sidebarOpen && <div className="fixed inset-0 bg-black/60 z-30 lg:hidden no-print" onClick={() => setSidebarOpen(false)} />}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/60 z-30 lg:hidden no-print" onClick={() => setSidebarOpen(false)} />
+      )}
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar onMenuClick={() => setSidebarOpen(true)} onSearchClick={() => setPaletteOpen(true)} />
         <main className="flex-1 overflow-y-auto">
@@ -60,10 +69,7 @@ export default function DashboardShell({ children }) {
   const { activeCompany, loading } = useCompany();
 
   useEffect(() => {
-    // Only redirect AFTER company list has finished loading
-    if (!loading && !activeCompany) {
-      router.replace("/companies");
-    }
+    if (!loading && !activeCompany) router.replace("/companies");
   }, [loading, activeCompany, router]);
 
   return (
@@ -73,7 +79,6 @@ export default function DashboardShell({ children }) {
           <Spinner label="Loading your company…" />
         </div>
       ) : !activeCompany ? (
-        /* Still loading OR redirecting — show spinner, don't flash dashboard */
         <div className="min-h-screen flex items-center justify-center bg-ink">
           <Spinner label="Redirecting to company selection…" />
         </div>
